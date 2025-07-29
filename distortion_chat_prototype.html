@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Distortion Chat - GM Controlled</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #111; color: #eee; display: flex; flex-direction: row; padding: 20px; gap: 20px; }
+    .panel { border: 1px solid #333; padding: 10px; background: #222; border-radius: 8px; width: 30%; display: flex; flex-direction: column; gap: 10px; }
+    textarea, input[type="text"] { width: 100%; background: #000; color: #eee; border: 1px solid #555; border-radius: 4px; padding: 5px; }
+    button { background: #444; color: #fff; padding: 5px; border: none; border-radius: 4px; cursor: pointer; }
+    button:hover { background: #666; }
+    .chat-log { height: 200px; overflow-y: auto; background: #000; padding: 5px; border: 1px solid #444; border-radius: 4px; white-space: pre-wrap; }
+    .message { margin: 4px 0; }
+    .label { font-weight: bold; margin-top: 10px; }
+    .pending { font-size: 0.9em; background: #111; border: 1px solid #555; padding: 5px; border-radius: 4px; max-height: 100px; overflow-y: auto; }
+    select { background: #000; color: #eee; border: 1px solid #555; padding: 5px; border-radius: 4px; }
+    .unit-a { color: #00f; }
+    .unit-b { color: #f69; }
+    .system { color: red; }
+    #fullLog { background: #000; color: #eee; border: 1px solid #555; border-radius: 4px; padding: 5px; height: 200px; overflow-y: auto; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <div class="panel">
+    <h3>Unit-001</h3>
+    <div class="chat-log" id="chatA"></div>
+    <input type="text" id="inputA" placeholder="Message to Unit-002" />
+    <button onclick="sendToGM('A')">Send</button>
+  </div>
+
+  <div class="panel">
+    <h3>Game Master</h3>
+    <div class="label">Incoming Messages:</div>
+    <div id="incoming" style="white-space: pre-wrap;"></div>
+    <div class="label">Pending Queue:</div>
+    <div class="pending" id="queueView"></div>
+    <div class="label">Modify & Send To:</div>
+    <select id="recipient">
+      <option value="A">Unit-001</option>
+      <option value="B">Unit-002</option>
+    </select>
+    <textarea id="gmMsg" rows="3"></textarea>
+    <button onclick="sendFromGM()">Send Distorted</button>
+    <div class="label">Quick Distortion:</div>
+    <button onclick="applyDistortion('mild')">Mild</button>
+    <button onclick="applyDistortion('moderate')">Moderate</button>
+    <button onclick="applyDistortion('severe')">Severe</button>
+    <div class="label">Add Message:</div>
+    <select id="customSender">
+      <option value="A">As Unit-001</option>
+      <option value="B">As Unit-002</option>
+      <option value="system">As SYSTEM</option>
+    </select>
+    <textarea id="customMsg" rows="2"></textarea>
+    <button onclick="addCustomMessage()">Add to Log</button>
+    <div class="label">View Mode:</div>
+    <select id="viewMode" onchange="switchViewMode()">
+      <option value="all">All Unedited</option>
+      <option value="distorted">All Distorted</option>
+      <option value="A">View as Unit-001</option>
+      <option value="B">View as Unit-002</option>
+    </select>
+    <div id="fullLog"></div>
+  </div>
+
+  <div class="panel">
+    <h3>Unit-002</h3>
+    <div class="chat-log" id="chatB"></div>
+    <input type="text" id="inputB" placeholder="Message to Unit-001" />
+    <button onclick="sendToGM('B')">Send</button>
+  </div>
+
+  <script>
+    const incomingDiv = document.getElementById('incoming');
+    const queueDiv = document.getElementById('queueView');
+    const fullLog = document.getElementById('fullLog');
+    let messageQueue = [];
+    let fullHistory = [];
+
+    function sendToGM(sender) {
+      const input = document.getElementById('input' + sender);
+      const msg = input.value;
+      if (!msg) return;
+
+      const recipient = sender === 'A' ? 'B' : 'A';
+      messageQueue.push({ sender, recipient, msg });
+      fullHistory.push(`${sender === 'A' ? '<span class=\"unit-a\">Unit-001</span>' : '<span class=\"unit-b\">Unit-002</span>'} (unedited): ${msg}`);
+      updateQueueView();
+      updateFullLog();
+
+      if (messageQueue.length === 1) {
+        loadNextMessage();
+      }
+
+      const senderName = sender === 'A' ? '<span class="unit-a">Unit-001</span>' : '<span class="unit-b">Unit-002</span>';
+      appendMessage(sender, `${senderName}: ${msg}`);
+      input.value = '';
+    }
+
+    function updateQueueView() {
+      queueDiv.innerHTML = messageQueue.map((m, i) => `${i + 1}. ${m.sender === 'A' ? 'Unit-001' : 'Unit-002'} ➜ ${m.recipient === 'A' ? 'Unit-001' : 'Unit-002'}: ${m.msg}`).join('\n');
+    }
+
+    function loadNextMessage() {
+      if (messageQueue.length === 0) {
+        incomingDiv.innerText = '';
+        document.getElementById('gmMsg').value = '';
+        return;
+      }
+      const current = messageQueue[0];
+      incomingDiv.innerText = `[${current.sender === 'A' ? 'Unit-001' : 'Unit-002'} ➜ ${current.recipient === 'A' ? 'Unit-001' : 'Unit-002'}]: ${current.msg}`;
+      document.getElementById('gmMsg').value = current.msg;
+      document.getElementById('recipient').value = current.recipient;
+    }
+
+    function sendFromGM() {
+      if (messageQueue.length === 0) return;
+      const to = messageQueue[0].recipient;
+      const msg = document.getElementById('gmMsg').value;
+      const fromName = to === 'A' ? '<span class="unit-b">Unit-002</span>' : '<span class="unit-a">Unit-001</span>';
+      appendMessage(to, `${fromName}: ${msg}`);
+      fullHistory.push(`${fromName} (sent): ${msg}`);
+      messageQueue.shift();
+      updateQueueView();
+      loadNextMessage();
+      updateFullLog();
+    }
+
+    function appendMessage(player, msg) {
+      const log = document.getElementById('chat' + player);
+      const messageDiv = document.createElement('div');
+      messageDiv.classList.add('message');
+      messageDiv.innerHTML = msg;
+      log.appendChild(messageDiv);
+      log.scrollTop = log.scrollHeight;
+      updateFullLog();
+    }
+
+    function applyDistortion(level) {
+      const original = document.getElementById('gmMsg').value;
+      const length = original.length;
+      if (length === 0) return;
+      let distorted = original.split('');
+
+      let percent;
+      if (level === 'mild') {
+        percent = Math.max(1 / length, 0.1);
+      } else if (level === 'moderate') {
+        percent = 0.25;
+      } else if (level === 'severe') {
+        percent = 0.6;
+      }
+
+      let count = Math.ceil(length * percent);
+      let indices = [...Array(length).keys()];
+      for (let i = 0; i < count && indices.length > 0; i++) {
+        const idx = indices.splice(Math.floor(Math.random() * indices.length), 1)[0];
+        distorted[idx] = getGlitchChar();
+      }
+
+      document.getElementById('gmMsg').value = distorted.join('');
+    }
+
+    function getGlitchChar() {
+      const chars = ['#', '*', '@', '%', '~', '$', '?', '⍰', '�', '∞', '¿', '╳', '▒'];
+      return chars[Math.floor(Math.random() * chars.length)];
+    }
+
+    function switchViewMode() {
+      const mode = document.getElementById('viewMode').value;
+      if (mode === 'all') {
+        const uneditedOnly = fullHistory.filter(line => line.includes('(unedited)')).join('<br>');
+        fullLog.innerHTML = uneditedOnly;
+      } else if (mode === 'distorted') {
+        const distortedOnly = fullHistory.filter(line => line.includes('(sent)')).join('<br>');
+        fullLog.innerHTML = distortedOnly;
+      } else {
+        const log = document.getElementById('chat' + mode);
+        fullLog.innerHTML = log.innerHTML;
+      }
+    }
+
+    function updateFullLog() {
+      switchViewMode();
+    }
+
+    function addCustomMessage() {
+      const type = document.getElementById('customSender').value;
+      const msg = document.getElementById('customMsg').value;
+      if (!msg) return;
+
+      let formatted;
+      if (type === 'A') {
+        formatted = '<span class="unit-a">Unit-001</span>: ' + msg;
+        appendMessage('B', formatted);
+        fullHistory.push(`<span class="unit-a">Unit-001</span> (sent): ${msg}`);
+      } else if (type === 'B') {
+        formatted = '<span class="unit-b">Unit-002</span>: ' + msg;
+        appendMessage('A', formatted);
+        fullHistory.push(`<span class="unit-b">Unit-002</span> (sent): ${msg}`);
+      } else if (type === 'system') {
+        formatted = '<span class="system">SYSTEM: ' + msg + '</span>';
+        appendMessage('A', formatted);
+        appendMessage('B', formatted);
+        fullHistory.push(`<span class="system">SYSTEM: ${msg}</span>`);
+      }
+
+      document.getElementById('customMsg').value = '';
+      updateFullLog();
+    }
+  </script>
+</body>
+</html>
